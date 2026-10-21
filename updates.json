@@ -1,0 +1,19 @@
+{
+  "addons": {
+    "structured-tags@williamwhite.github.io": {
+      "updates": [
+        {
+          "version": "1.0.0",
+          "update_link": "https://github.com/WilliamWhite/zotero-structured-tags/releases/download/v1.0.0/structured-tags-1.0.0.xpi",
+          "update_hash": "sha256:bcb42110bb1b329eb7f5063c6c1b962d0e7f2be8085aec4a71b553ae0afa3162",
+          "applications": {
+            "zotero": {
+              "strict_min_version": "10.0",
+              "strict_max_version": "10.0.*"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

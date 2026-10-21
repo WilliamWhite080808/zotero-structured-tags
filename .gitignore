@@ -1,0 +1,6 @@
+dist/
+.zotero-src/
+node_modules/
+*.log
+.DS_Store
+Thumbs.db

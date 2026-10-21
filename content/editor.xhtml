@@ -1,0 +1,40 @@
+<?xml version="1.0"?>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <title>结构化标签管理器</title>
+  <link rel="stylesheet" href="editor.css" />
+</head>
+<body>
+  <header>
+    <h1>结构化标签管理器</h1>
+    <nav>
+      <button id="tab-edit" class="tab active">编辑条目</button>
+      <button id="tab-settings" class="tab">列名与选项</button>
+    </nav>
+  </header>
+
+  <main>
+    <section id="panel-edit">
+      <p id="selection-summary" class="hint"></p>
+      <div id="empty-selection" class="notice" hidden="hidden">请先在 Zotero 文献列表中选择一个或多个条目。</div>
+      <div id="field-editor"></div>
+      <div class="actions">
+        <button id="cancel-edit">关闭</button>
+        <button id="save-edit" class="primary">应用到所选条目</button>
+      </div>
+    </section>
+
+    <section id="panel-settings" hidden="hidden">
+      <p class="hint">勾选需要展示的列；直接修改列名、字段类型和候选选项（用逗号分隔），并可调整排列顺序。保存后已有标签会自动迁移。</p>
+      <div id="settings-list"></div>
+      <button id="add-field">＋ 添加字段</button>
+      <div class="actions">
+        <button id="cancel-settings">关闭</button>
+        <button id="save-settings" class="primary">保存字段设置</button>
+      </div>
+    </section>
+  </main>
+  <script src="editor.js"></script>
+</body>
+</html>
