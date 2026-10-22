@@ -1,8 +1,8 @@
 {
   "manifest_version": 2,
   "name": "Structured Tags for Zotero",
-  "version": "1.0.1",
-  "description": "在 Zotero 文献列表中创建、显示和编辑可配置的结构化标签列。",
+  "version": "1.0.2",
+  "description": "在 Zotero 文献列表中创建、显示和编辑结构化标签列。 / Create, display, and edit structured-tag columns in Zotero.",
   "author": "WilliamWhite080808",
   "homepage_url": "https://github.com/WilliamWhite080808/zotero-structured-tags",
   "icons": {

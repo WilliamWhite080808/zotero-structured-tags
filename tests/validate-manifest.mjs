@@ -18,6 +18,8 @@ assert.ok(fs.existsSync(new URL("../bootstrap.js", import.meta.url)), "bootstrap
 const bootstrap = fs.readFileSync(new URL("../bootstrap.js", import.meta.url), "utf8");
 const pluginSource = fs.readFileSync(new URL("../content/structured-tags.js", import.meta.url), "utf8");
 assert.match(bootstrap, /registerChrome\s*\(/, "bootstrap must register the editor's privileged content URL");
+assert.match(bootstrap, /setAddonVersion\s*\(version\)/, "bootstrap must pass the installed version to the migration engine");
 assert.match(pluginSource, /chrome:\/\/structuredtags\/content\/editor\.xhtml/, "editor must use the registered chrome URL");
+assert.match(pluginSource, /new Zotero\.DBConnection\("structured-tags"\)/, "plugin must keep its mirror in Zotero's data directory");
 
 console.log("Zotero manifest validation passed");

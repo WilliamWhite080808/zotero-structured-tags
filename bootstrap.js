@@ -17,6 +17,7 @@ async function startup({ id, version, rootURI }, reason) {
 
   Services.scriptloader.loadSubScript(rootURI + "content/structured-tags.js");
   StructuredTags.setRootURI(rootURI);
+  StructuredTags.setAddonVersion(version);
   await StructuredTags.startup();
 }
 

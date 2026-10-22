@@ -86,6 +86,22 @@ assert.equal(openedDialog[0], "chrome://structuredtags/content/editor.xhtml", "o
 assert.equal(openedDialog[1], "structured-tags-settings");
 assert.equal([...openedDialog[3].itemIDs].join(","), "123");
 
+let stableMatch = api.matchStoredFields(
+  [{ id: "reading", name: "阅读进度", type: "single", options: ["未读", "已读"] }],
+  [{ id: "reading", name: "阅读状态", type: "single", options: ["未读", "已读"] }]
+)[0];
+assert.equal(stableMatch.decision, "auto-stable-id", "stable IDs always win over renamed labels");
+let aliasMatch = api.matchStoredFields(
+  [{ id: "legacy", name: "阅读进度", type: "single", options: ["未读", "已读"], aliases: [] }],
+  [{ id: "reading-v2", name: "阅读状态", type: "single", options: ["未读", "已读"], aliases: ["阅读进度"] }]
+)[0];
+assert.equal(aliasMatch.decision, "auto-high-confidence", "recorded aliases and option overlap permit a robust migration");
+let unrelatedMatch = api.matchStoredFields(
+  [{ id: "legacy", name: "实验温度", type: "number", options: [] }],
+  [{ id: "reading", name: "阅读状态", type: "single", options: ["未读"] }]
+)[0];
+assert.equal(unrelatedMatch.decision, "unmatched", "low-confidence fields are never migrated automatically");
+
 const renamedConfig = api.getConfig();
 renamedConfig.find(field => field.id === "literatureType").name = "资料类型";
 await api.saveConfig(renamedConfig);
@@ -93,5 +109,23 @@ assert.deepEqual(renamed, [
   { libraryID: 1, oldTag: "文献类型：理论研究", newTag: "资料类型：理论研究" },
   { libraryID: 1, oldTag: "文献类型：综述", newTag: "资料类型：综述" }
 ]);
+
+const storageQueries = [];
+api.db = {
+  async executeTransaction(callback) { return callback(); },
+  async rowQueryAsync() { return null; },
+  async queryAsync(sql, params) { storageQueries.push({ sql, params }); }
+};
+fakeItem.libraryID = 1;
+fakeItem.key = "ITEMKEY";
+fakeItem.getTags = () => [
+  { tag: "资料类型：理论研究" },
+  { tag: "资料类型：综述" },
+  { tag: "关键数值：44" }
+];
+await api.syncItemToStorage(fakeItem, "test");
+assert.equal(storageQueries.filter(query => query.sql.includes("item_values")).length, 2, "mirrors each non-empty structured field");
+assert.equal(storageQueries.filter(query => query.sql.includes("change_history")).length, 2, "records an audit entry for each mirrored change");
+api.db = null;
 
 console.log("Structured Tags tests passed");

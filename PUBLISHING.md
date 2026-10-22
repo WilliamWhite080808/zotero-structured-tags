@@ -1,60 +1,72 @@
-# GitHub 发布步骤
+# GitHub 发布步骤 / GitHub Publishing Guide
 
-以下示例使用仓库名 `zotero-structured-tags`。
+## 1. 选择版本号 / Choose a Version
 
-## 1. 核对 GitHub 用户名
+- 修复问题使用补丁版本，例如 `1.0.1 → 1.0.2`。 / Use a patch version for fixes, such as `1.0.1 → 1.0.2`.
+- 增加兼容功能使用次版本，例如 `1.0.2 → 1.1.0`。 / Use a minor version for compatible features, such as `1.0.2 → 1.1.0`.
+- 不兼容变更使用主版本。 / Use a major version for incompatible changes.
 
-当前公开版按 GitHub 用户名 `WilliamWhite080808` 配置。如果实际用户名不同，请先替换以下文件中的 `WilliamWhite080808`：
+## 2. 更新所有版本文件 / Update Every Versioned File
 
-- `manifest.json`
-- `updates.json`
-- `LICENSE`
+1. 修改 `manifest.json` 中的 `version`。 / Change `version` in `manifest.json`.
+2. 在 `CHANGELOG.md` 顶部添加中英双语更新说明。 / Add bilingual notes at the top of `CHANGELOG.md`.
+3. 构建完成后，在 `updates.json` 最前面加入版本号、Release 下载地址和 SHA-256。 / After building, prepend the version, Release URL, and SHA-256 to `updates.json`.
+4. 如功能或使用方式变化，同步更新中英双语 `README.md`。 / Update the bilingual `README.md` when behavior or usage changes.
 
-## 2. 创建仓库
-
-1. 登录 GitHub。
-2. 点击右上角 `+`，选择 **New repository**。
-3. Repository name 填写 `zotero-structured-tags`。
-4. 选择 **Public**。
-5. 不要勾选自动添加 README、`.gitignore` 或 License。
-6. 点击 **Create repository**。
-
-## 3. 上传源码
-
-在本目录打开 PowerShell，执行：
+## 3. 测试与构建 / Test and Build
 
 ```powershell
-git init -b main
-git config user.name "WilliamWhite080808"
-git config user.email "你的 GitHub no-reply 邮箱"
-git add .
-git commit -m "Initial public release"
-git remote add origin https://github.com/WilliamWhite080808/zotero-structured-tags.git
-git push -u origin main
+node .\tests\validate-manifest.mjs
+node .\tests\test-structured-tags.mjs
+.\build.ps1
 ```
 
-GitHub no-reply 邮箱可在 GitHub 的 **Settings → Emails** 中查看。不要直接使用电脑当前的全局 Git 邮箱，否则该邮箱会写入公开提交历史。
+计算校验值 / Calculate the checksum:
 
-首次推送时，GitHub 可能要求通过浏览器登录或使用 Personal Access Token。
+```powershell
+(Get-FileHash .\dist\structured-tags-VERSION.xpi -Algorithm SHA256).Hash.ToLower()
+```
 
-## 4. 创建 1.0.0 Release
+## 4. 提交源码 / Commit the Source
 
-1. 打开仓库页面，进入 **Releases**。
-2. 点击 **Create a new release**。
-3. 新建 tag：`v1.0.0`。
-4. Release title 填写 `Structured Tags for Zotero 1.0.0`。
-5. 上传 `dist/structured-tags-1.0.0.xpi`。
-6. 点击 **Publish release**。
+```powershell
+git add .
+git commit -m "Release version VERSION"
+git push origin main
+```
 
-## 5. 验证自动更新文件
+## 5. 创建 Release / Create the Release
 
-发布完成后，确认以下两个地址可以直接打开：
+1. 打开仓库的 **Releases → Draft a new release**。 / Open **Releases → Draft a new release**.
+2. 创建标签 `vVERSION`，例如 `v1.0.2`。 / Create tag `vVERSION`, for example `v1.0.2`.
+3. 标题必须清楚包含版本号：`Structured Tags for Zotero VERSION`。 / The title must clearly include the version: `Structured Tags for Zotero VERSION`.
+4. Release 正文必须包含“中文说明”和“English Notes”。 / The body must contain both “中文说明” and “English Notes”.
+5. 上传 `dist/structured-tags-VERSION.xpi`。 / Upload `dist/structured-tags-VERSION.xpi`.
+6. 发布后核对标签、文件名、下载链接、版本号和哈希完全一致。 / After publishing, verify the tag, filename, URL, version, and hash all match.
 
-- `https://raw.githubusercontent.com/WilliamWhite080808/zotero-structured-tags/main/updates.json`
-- `https://github.com/WilliamWhite080808/zotero-structured-tags/releases/download/v1.0.0/structured-tags-1.0.0.xpi`
+## 6. Release 正文模板 / Release Notes Template
 
-以后发布新版本时，需要同步更新：
+```markdown
+# VERSION / Version VERSION
 
-1. `manifest.json` 中的版本号。
-2. `updates.json` 中的版本号、下载地址和 SHA-256。
-3. GitHub Release 的 tag 和 `.xpi` 文件。
+## 中文说明
+
+- 本版本的主要变化
+
+## English Notes
+
+- Main changes in this release
+
+## 安装 / Installation
+
+下载 `structured-tags-VERSION.xpi`，在 Zotero 中选择“工具 → 插件 → Install Plugin From File…”，然后重启 Zotero。
+
+Download `structured-tags-VERSION.xpi`, choose **Tools → Plugins → Install Plugin From File…**, and restart Zotero.
+```
+
+## 7. 验证自动更新 / Verify Automatic Updates
+
+- [updates.json](https://raw.githubusercontent.com/WilliamWhite080808/zotero-structured-tags/main/updates.json)
+- [GitHub Releases](https://github.com/WilliamWhite080808/zotero-structured-tags/releases)
+
+Zotero 读取 `manifest.json` 中的 `update_url`，因此 `updates.json` 必须先推送，Release 中也必须存在对应的 XPI。 / Zotero reads `update_url` from `manifest.json`, so `updates.json` must be pushed and the matching XPI must exist in the Release.

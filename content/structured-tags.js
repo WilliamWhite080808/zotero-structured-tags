@@ -3,7 +3,12 @@
 var StructuredTags = {
   pluginID: "structured-tags@williamwhite.github.io",
   prefKey: "extensions.zoteroStructuredTags.fields",
+  versionPrefKey: "extensions.zoteroStructuredTags.lastStorageVersion",
   rootURI: "",
+  addonVersion: "0.0.0",
+  db: null,
+  notifierID: null,
+  storageQueue: Promise.resolve(),
   registeredColumns: [],
   columnFieldMap: new Map(),
   windows: new Set(),
@@ -23,9 +28,25 @@ var StructuredTags = {
     this.rootURI = rootURI;
   },
 
+  setAddonVersion(version) {
+    this.addonVersion = String(version || "0.0.0");
+  },
+
   async startup() {
     if (!Zotero.Prefs.get(this.prefKey, true)) {
       Zotero.Prefs.set(this.prefKey, JSON.stringify(this.defaultFields), true);
+    }
+    await this.initializeStorage();
+    if (this.db) {
+      try {
+        await this.reconcileForVersionChange();
+        this.registerStorageObserver();
+      }
+      catch (error) {
+        // The native Zotero tags remain usable even if the optional local
+        // mirror cannot be reconciled. Never block the main plugin UI.
+        Zotero.logError(error);
+      }
     }
     await this.registerColumns();
     for (let win of Services.wm.getEnumerator("navigator:browser")) {
@@ -34,8 +55,17 @@ var StructuredTags = {
   },
 
   async shutdown() {
+    if (this.notifierID) {
+      Zotero.Notifier.unregisterObserver(this.notifierID);
+      this.notifierID = null;
+    }
+    await this.storageQueue.catch(() => {});
     for (let win of [...this.windows]) this.removeFromWindow(win);
     await this.unregisterColumns();
+    if (this.db) {
+      await this.db.closeDatabase();
+      this.db = null;
+    }
   },
 
   getConfig() {
@@ -47,6 +77,393 @@ var StructuredTags = {
       Zotero.logError(e);
     }
     return structuredClone(this.defaultFields);
+  },
+
+  async initializeStorage() {
+    if (!Zotero.DBConnection) return;
+    try {
+      this.db = new Zotero.DBConnection("structured-tags");
+      let statements = [
+        `CREATE TABLE IF NOT EXISTS metadata (
+          key TEXT PRIMARY KEY,
+          value TEXT NOT NULL
+        )`,
+        `CREATE TABLE IF NOT EXISTS fields (
+          field_id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          normalized_name TEXT NOT NULL,
+          type TEXT NOT NULL,
+          options_json TEXT NOT NULL,
+          aliases_json TEXT NOT NULL,
+          active INTEGER NOT NULL DEFAULT 1,
+          updated_at INTEGER NOT NULL
+        )`,
+        `CREATE TABLE IF NOT EXISTS item_values (
+          library_id INTEGER NOT NULL,
+          item_key TEXT NOT NULL,
+          item_id INTEGER NOT NULL,
+          field_id TEXT NOT NULL,
+          field_name TEXT NOT NULL,
+          values_json TEXT NOT NULL,
+          source TEXT NOT NULL,
+          updated_at INTEGER NOT NULL,
+          PRIMARY KEY (library_id, item_key, field_id)
+        )`,
+        `CREATE TABLE IF NOT EXISTS change_history (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          library_id INTEGER NOT NULL,
+          item_key TEXT NOT NULL,
+          item_id INTEGER NOT NULL,
+          field_id TEXT NOT NULL,
+          old_values_json TEXT NOT NULL,
+          new_values_json TEXT NOT NULL,
+          source TEXT NOT NULL,
+          changed_at INTEGER NOT NULL
+        )`,
+        `CREATE TABLE IF NOT EXISTS migration_log (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          from_version TEXT NOT NULL,
+          to_version TEXT NOT NULL,
+          old_field_id TEXT,
+          old_field_name TEXT,
+          new_field_id TEXT,
+          new_field_name TEXT,
+          score REAL NOT NULL,
+          decision TEXT NOT NULL,
+          details_json TEXT NOT NULL,
+          created_at INTEGER NOT NULL
+        )`,
+        "CREATE INDEX IF NOT EXISTS item_values_item_id ON item_values(item_id)",
+        "CREATE INDEX IF NOT EXISTS change_history_item_id ON change_history(item_id)"
+      ];
+      for (let statement of statements) await this.db.queryAsync(statement);
+      Zotero.debug(`Structured Tags: local mirror database ready at ${this.db.path}`);
+    }
+    catch (error) {
+      Zotero.logError(error);
+      this.db = null;
+    }
+  },
+
+  async getStorageMeta(key) {
+    if (!this.db) return null;
+    return this.db.valueQueryAsync("SELECT value FROM metadata WHERE key=?", [key]);
+  },
+
+  async setStorageMeta(key, value) {
+    if (!this.db) return;
+    await this.db.queryAsync("INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)", [key, String(value)]);
+  },
+
+  normalizeMatchText(value) {
+    return String(value || "")
+      .normalize("NFKC")
+      .toLocaleLowerCase()
+      .replace(/[\p{P}\p{S}\s]+/gu, "")
+      .trim();
+  },
+
+  matchTokens(value) {
+    let normalized = this.normalizeMatchText(value);
+    if (!normalized) return new Set();
+    if (normalized.length < 2) return new Set([normalized]);
+    let tokens = new Set();
+    for (let i = 0; i < normalized.length - 1; i++) tokens.add(normalized.slice(i, i + 2));
+    return tokens;
+  },
+
+  setSimilarity(left, right) {
+    let a = left instanceof Set ? left : new Set(left || []);
+    let b = right instanceof Set ? right : new Set(right || []);
+    if (!a.size && !b.size) return 1;
+    let intersection = [...a].filter(value => b.has(value)).length;
+    return intersection / Math.max(1, a.size + b.size - intersection);
+  },
+
+  stringSimilarity(left, right) {
+    left = this.normalizeMatchText(left);
+    right = this.normalizeMatchText(right);
+    if (left === right) return left ? 1 : 0;
+    if (!left || !right) return 0;
+    let previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+    for (let i = 1; i <= left.length; i++) {
+      let current = [i];
+      for (let j = 1; j <= right.length; j++) {
+        current[j] = Math.min(
+          current[j - 1] + 1,
+          previous[j] + 1,
+          previous[j - 1] + (left[i - 1] === right[j - 1] ? 0 : 1)
+        );
+      }
+      previous = current;
+    }
+    return Math.max(0, 1 - previous[right.length] / Math.max(left.length, right.length));
+  },
+
+  typesCompatible(oldType, newType) {
+    if (oldType === newType) return true;
+    return new Set([oldType, newType]).size === 2 && [oldType, newType].every(type => ["single", "multi"].includes(type));
+  },
+
+  scoreFieldMatch(oldField, newField) {
+    if (oldField.id && oldField.id === newField.id) {
+      return { score: 1, reasons: ["stable-id"] };
+    }
+    let score = 0;
+    let reasons = [];
+    let oldName = this.normalizeMatchText(oldField.name);
+    let newName = this.normalizeMatchText(newField.name);
+    let aliases = [...(oldField.aliases || []), ...(newField.aliases || [])].map(value => this.normalizeMatchText(value));
+    if (oldName && oldName === newName) {
+      score += 0.55;
+      reasons.push("exact-normalized-name");
+    }
+    else if (aliases.includes(oldName) || aliases.includes(newName)) {
+      score += 0.48;
+      reasons.push("recorded-alias");
+    }
+    let lexical = this.stringSimilarity(oldName, newName);
+    let tokenOverlap = this.setSimilarity(this.matchTokens(oldName), this.matchTokens(newName));
+    score += lexical * 0.15 + tokenOverlap * 0.12;
+    if (lexical >= 0.75) reasons.push("similar-name");
+    if (oldField.type === newField.type) {
+      score += 0.12;
+      reasons.push("same-type");
+    }
+    else if (this.typesCompatible(oldField.type, newField.type)) {
+      score += 0.05;
+      reasons.push("compatible-type");
+    }
+    let oldOptions = new Set((oldField.options || []).map(value => this.normalizeMatchText(value)).filter(Boolean));
+    let newOptions = new Set((newField.options || []).map(value => this.normalizeMatchText(value)).filter(Boolean));
+    if (oldOptions.size || newOptions.size) {
+      let optionOverlap = this.setSimilarity(oldOptions, newOptions);
+      score += optionOverlap * 0.18;
+      if (optionOverlap >= 0.5) reasons.push("option-overlap");
+    }
+    else if (["number", "text"].includes(oldField.type) && oldField.type === newField.type) {
+      score += 0.06;
+      reasons.push("value-shape-compatible");
+    }
+    let profile = oldField.valueProfile;
+    if (profile?.samples) {
+      let confidence = Math.min(1, profile.samples / 5);
+      if (newField.type === "number" && profile.numericRatio >= 0.9) {
+        score += 0.08 * confidence;
+        reasons.push("numeric-value-distribution");
+      }
+      if (newField.type === "single" && profile.multiRatio === 0) {
+        score += 0.04 * confidence;
+        reasons.push("single-value-cardinality");
+      }
+      if (newField.type === "multi" && profile.multiRatio >= 0.2) {
+        score += 0.04 * confidence;
+        reasons.push("multi-value-cardinality");
+      }
+      if (newOptions.size && profile.values?.length) {
+        let matchingValues = profile.values.filter(value => newOptions.has(this.normalizeMatchText(value))).length;
+        let coverage = matchingValues / profile.values.length;
+        score += coverage * 0.10 * confidence;
+        if (coverage >= 0.5) reasons.push("observed-value-option-coverage");
+      }
+    }
+    return { score: Math.min(0.99, score), reasons };
+  },
+
+  matchStoredFields(oldFields, newFields) {
+    let matches = oldFields.map(oldField => {
+      let candidates = newFields.map(newField => ({
+        field: newField,
+        ...this.scoreFieldMatch(oldField, newField)
+      })).sort((a, b) => b.score - a.score);
+      let best = candidates[0] || null;
+      let second = candidates[1] || { score: 0 };
+      let margin = best ? best.score - second.score : 0;
+      let decision = "unmatched";
+      if (best?.reasons.includes("stable-id")) decision = "auto-stable-id";
+      else if (best && best.score >= 0.84 && margin >= 0.12 && this.typesCompatible(oldField.type, best.field.type)) decision = "auto-high-confidence";
+      else if (best && best.score >= 0.70 && margin >= 0.18 && this.typesCompatible(oldField.type, best.field.type)) decision = "review-conservative";
+      return { oldField, best, margin, decision };
+    });
+    let automatic = matches.filter(match => match.decision.startsWith("auto-") && match.best);
+    for (let newField of newFields) {
+      let competing = automatic.filter(match => match.best.field.id === newField.id);
+      if (competing.length < 2) continue;
+      competing.sort((a, b) => {
+        let stableDifference = Number(b.decision === "auto-stable-id") - Number(a.decision === "auto-stable-id");
+        return stableDifference || b.best.score - a.best.score;
+      });
+      for (let conflict of competing.slice(1)) conflict.decision = "review-candidate-collision";
+    }
+    return matches;
+  },
+
+  async loadStoredFields() {
+    if (!this.db) return [];
+    let rows = await this.db.queryAsync("SELECT * FROM fields WHERE active=1");
+    let fields = [];
+    for (let row of rows) {
+      let valueRows = await this.db.queryAsync(
+        "SELECT values_json FROM item_values WHERE field_id=? ORDER BY updated_at DESC LIMIT 500",
+        [row.field_id]
+      );
+      let samples = valueRows.map(valueRow => {
+        try { return JSON.parse(valueRow.values_json || "[]"); }
+        catch (error) { return []; }
+      }).filter(values => Array.isArray(values) && values.length);
+      let flattened = samples.flat().map(String).filter(Boolean);
+      fields.push({
+        id: row.field_id,
+        name: row.name,
+        type: row.type,
+        options: JSON.parse(row.options_json || "[]"),
+        aliases: JSON.parse(row.aliases_json || "[]"),
+        valueProfile: {
+          samples: samples.length,
+          numericRatio: flattened.length ? flattened.filter(value => Number.isFinite(Number(value))).length / flattened.length : 0,
+          multiRatio: samples.length ? samples.filter(values => values.length > 1).length / samples.length : 0,
+          values: [...new Set(flattened)].slice(0, 200)
+        }
+      });
+    }
+    return fields;
+  },
+
+  async persistFieldCatalog(fields) {
+    if (!this.db) return;
+    let now = Date.now();
+    await this.db.queryAsync("UPDATE fields SET active=0");
+    for (let field of fields) {
+      await this.db.queryAsync(
+        `INSERT OR REPLACE INTO fields
+          (field_id, name, normalized_name, type, options_json, aliases_json, active, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, 1, ?)`,
+        [field.id, field.name, this.normalizeMatchText(field.name), field.type,
+          JSON.stringify(field.options || []), JSON.stringify(field.aliases || []), now]
+      );
+    }
+  },
+
+  async logMigration(fromVersion, match) {
+    if (!this.db) return;
+    await this.db.queryAsync(
+      `INSERT INTO migration_log
+        (from_version, to_version, old_field_id, old_field_name, new_field_id, new_field_name, score, decision, details_json, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [fromVersion || "unknown", this.addonVersion, match.oldField.id || null, match.oldField.name || null,
+        match.best?.field.id || null, match.best?.field.name || null, match.best?.score || 0, match.decision,
+        JSON.stringify({ margin: match.margin, reasons: match.best?.reasons || [] }), Date.now()]
+    );
+  },
+
+  async migrateMatchedField(oldField, newField) {
+    if (!oldField?.name || !newField?.name || oldField.name === newField.name) return;
+    let oldPrefix = `${oldField.name}：`;
+    for (let library of Zotero.Libraries.getAll()) {
+      try {
+        let tags = await Zotero.Tags.getAll(library.libraryID);
+        for (let tagData of tags) {
+          if (!tagData.tag.startsWith(oldPrefix)) continue;
+          let value = tagData.tag.slice(oldPrefix.length);
+          if (value) await Zotero.Tags.rename(library.libraryID, tagData.tag, `${newField.name}：${value}`);
+        }
+      }
+      catch (error) {
+        Zotero.logError(error);
+      }
+    }
+  },
+
+  async reconcileForVersionChange() {
+    if (!this.db) return;
+    let previousVersion = await this.getStorageMeta("addon_version")
+      || Zotero.Prefs.get(this.versionPrefKey, true)
+      || "none";
+    let currentFields = this.getConfig();
+    if (previousVersion !== this.addonVersion) {
+      let storedFields = await this.loadStoredFields();
+      for (let match of this.matchStoredFields(storedFields, currentFields)) {
+        await this.logMigration(previousVersion, match);
+        if (["auto-stable-id", "auto-high-confidence"].includes(match.decision)) {
+          await this.migrateMatchedField(match.oldField, match.best.field);
+        }
+      }
+      await this.persistFieldCatalog(currentFields);
+      await this.scanAllLibraries(`version-scan:${previousVersion}->${this.addonVersion}`);
+      await this.setStorageMeta("addon_version", this.addonVersion);
+      await this.setStorageMeta("last_reconciliation_at", Date.now());
+      Zotero.Prefs.set(this.versionPrefKey, this.addonVersion, true);
+    }
+    else {
+      await this.persistFieldCatalog(currentFields);
+    }
+  },
+
+  async scanAllLibraries(source = "startup-scan") {
+    if (!this.db || !Zotero.Items.getAll) return;
+    for (let library of Zotero.Libraries.getAll()) {
+      try {
+        let items = await Zotero.Items.getAll(library.libraryID, true, false);
+        for (let item of items) {
+          if (item?.isRegularItem?.()) await this.syncItemToStorage(item, source);
+        }
+      }
+      catch (error) {
+        Zotero.logError(error);
+      }
+    }
+  },
+
+  async syncItemToStorage(item, source = "notifier") {
+    if (!this.db) return;
+    item = this.resolveRegularItem(item);
+    if (!item) return;
+    let fields = this.getConfig();
+    let libraryID = Number(item.libraryID || 0);
+    let itemKey = String(item.key || item.id);
+    let now = Date.now();
+    await this.db.executeTransaction(async () => {
+      for (let field of fields) {
+        let valuesJSON = JSON.stringify(this.getValues(item, field));
+        let existing = await this.db.rowQueryAsync(
+          "SELECT values_json FROM item_values WHERE library_id=? AND item_key=? AND field_id=?",
+          [libraryID, itemKey, field.id]
+        );
+        let oldJSON = existing?.values_json || "[]";
+        if (oldJSON === valuesJSON) continue;
+        await this.db.queryAsync(
+          `INSERT OR REPLACE INTO item_values
+            (library_id, item_key, item_id, field_id, field_name, values_json, source, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          [libraryID, itemKey, item.id, field.id, field.name, valuesJSON, source, now]
+        );
+        await this.db.queryAsync(
+          `INSERT INTO change_history
+            (library_id, item_key, item_id, field_id, old_values_json, new_values_json, source, changed_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          [libraryID, itemKey, item.id, field.id, oldJSON, valuesJSON, source, now]
+        );
+      }
+    });
+  },
+
+  registerStorageObserver() {
+    if (!this.db || !Zotero.Notifier?.registerObserver || this.notifierID) return;
+    this.notifierID = Zotero.Notifier.registerObserver({
+      notify: (event, type, ids) => {
+        let itemIDs = type === "item-tag"
+          ? ids.map(value => Number(String(value).split("-")[0])).filter(Boolean)
+          : ids.map(Number).filter(Boolean);
+        if (!itemIDs.length) return;
+        this.storageQueue = this.storageQueue.then(async () => {
+          for (let itemID of new Set(itemIDs)) {
+            let item = await Zotero.Items.getAsync(itemID);
+            if (item) await this.syncItemToStorage(item, `notifier:${type}:${event}`);
+            else await this.db.queryAsync("DELETE FROM item_values WHERE item_id=?", [itemID]);
+          }
+        }).catch(error => Zotero.logError(error));
+      }
+    }, ["item", "item-tag"], "structured-tags-storage", 101);
   },
 
   normalizeName(value) {
@@ -552,6 +969,7 @@ var StructuredTags = {
       }
       if (touched) {
         await item.saveTx();
+        await this.syncItemToStorage(item, "plugin-edit");
         changed++;
       }
     }
@@ -575,7 +993,13 @@ var StructuredTags = {
       usedIDs.add(id);
       let type = ["single", "multi", "number", "text"].includes(field.type) ? field.type : "text";
       let options = [...new Set((field.options || []).map(v => this.normalizeName(v)).filter(Boolean))];
-      clean.push({ id, name, type, options, visible: field.visible !== false });
+      let old = oldByID.get(id);
+      let aliases = [...new Set([
+        ...(old?.aliases || []),
+        ...(field.aliases || []),
+        ...(old?.name && old.name !== name ? [old.name] : [])
+      ].map(value => this.normalizeName(value)).filter(value => value && value !== name))];
+      clean.push({ id, name, type, options, aliases, visible: field.visible !== false });
     }
     if (!clean.length) throw new Error("至少需要保留一个字段");
 
@@ -611,6 +1035,8 @@ var StructuredTags = {
     }
 
     Zotero.Prefs.set(this.prefKey, JSON.stringify(clean), true);
+    await this.persistFieldCatalog(clean);
+    await this.setStorageMeta("config_updated_at", Date.now());
     await this.registerColumns();
     await this.refreshWindows();
     return clean;
