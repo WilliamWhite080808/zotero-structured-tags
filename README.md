@@ -2,6 +2,10 @@
 
 一个面向 Zotero 10 的可配置结构化标签插件。它使用 Zotero 原生标签保存数据，并将字段显示为文献列表中的独立列。
 
+## 界面预览
+
+![Structured Tags for Zotero 界面预览](docs/images/structured-tags-overview.png)
+
 ## 功能
 
 - 在文献列表中显示自定义标签列
