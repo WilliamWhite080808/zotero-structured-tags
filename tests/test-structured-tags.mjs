@@ -72,6 +72,20 @@ const firstCell = registered[0].renderCell(0, "\u001e123", { className: "exact-c
 assert.match(firstCell.className, /\bcell\b/);
 assert.match(firstCell.className, /\bexact-column-width\b/);
 
+let openedDialog = null;
+const fakeWindow = {
+  ZoteroPane: { getSelectedItems: () => [fakeItem] },
+  openDialog(...args) {
+    openedDialog = args;
+    return { focus() {} };
+  },
+  alert() {}
+};
+api.openEditor(fakeWindow, "settings");
+assert.equal(openedDialog[0], "chrome://structuredtags/content/editor.xhtml", "opens the editor through the registered privileged URL");
+assert.equal(openedDialog[1], "structured-tags-settings");
+assert.equal([...openedDialog[3].itemIDs].join(","), "123");
+
 const renamedConfig = api.getConfig();
 renamedConfig.find(field => field.id === "literatureType").name = "资料类型";
 await api.saveConfig(renamedConfig);

@@ -15,4 +15,9 @@ assert.ok(zotero?.strict_max_version, "applications.zotero.strict_max_version is
 assert.ok(!String(zotero.strict_min_version || "").includes("*"), "strict_min_version cannot contain '*'");
 assert.ok(fs.existsSync(new URL("../bootstrap.js", import.meta.url)), "bootstrap.js is required");
 
+const bootstrap = fs.readFileSync(new URL("../bootstrap.js", import.meta.url), "utf8");
+const pluginSource = fs.readFileSync(new URL("../content/structured-tags.js", import.meta.url), "utf8");
+assert.match(bootstrap, /registerChrome\s*\(/, "bootstrap must register the editor's privileged content URL");
+assert.match(pluginSource, /chrome:\/\/structuredtags\/content\/editor\.xhtml/, "editor must use the registered chrome URL");
+
 console.log("Zotero manifest validation passed");

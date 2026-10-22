@@ -3,6 +3,17 @@
     "structured-tags@williamwhite.github.io": {
       "updates": [
         {
+          "version": "1.0.1",
+          "update_link": "https://github.com/WilliamWhite080808/zotero-structured-tags/releases/download/v1.0.1/structured-tags-1.0.1.xpi",
+          "update_hash": "sha256:5c032410bd4ad14b607c290896034323b38e6920f93f19b16c198991c88e133b",
+          "applications": {
+            "zotero": {
+              "strict_min_version": "10.0",
+              "strict_max_version": "10.0.*"
+            }
+          }
+        },
+        {
           "version": "1.0.0",
           "update_link": "https://github.com/WilliamWhite080808/zotero-structured-tags/releases/download/v1.0.0/structured-tags-1.0.0.xpi",
           "update_hash": "sha256:a366bb58cf4d3626f7ed16d004cbdc11299ee6884e2aaeb426807601c05aa070",

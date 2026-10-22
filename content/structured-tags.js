@@ -312,16 +312,23 @@ var StructuredTags = {
   },
 
   openEditor(win, initialTab = "edit", explicitItemIDs = null, focusFieldID = null) {
-    let selected = win.ZoteroPane?.getSelectedItems?.() || [];
-    let itemIDs = explicitItemIDs || this.selectionToRegularItems(selected).map(item => item.id);
-    let dialog = win.openDialog(
-      this.rootURI + "content/editor.xhtml",
-      initialTab === "settings" ? "structured-tags-settings" : `structured-tags-editor-${Date.now()}`,
-      "chrome,centerscreen,resizable,dialog=no,width=780,height=720",
-      { api: this, itemIDs, initialTab, focusFieldID }
-    );
-    dialog?.focus?.();
-    return dialog;
+    try {
+      let selected = win.ZoteroPane?.getSelectedItems?.() || [];
+      let itemIDs = explicitItemIDs || this.selectionToRegularItems(selected).map(item => item.id);
+      let dialog = win.openDialog(
+        "chrome://structuredtags/content/editor.xhtml",
+        initialTab === "settings" ? "structured-tags-settings" : `structured-tags-editor-${Date.now()}`,
+        "chrome,centerscreen,resizable,dialog=no,width=780,height=720",
+        { api: this, itemIDs, initialTab, focusFieldID }
+      );
+      dialog?.focus?.();
+      return dialog;
+    }
+    catch (error) {
+      Zotero.logError(error);
+      win.alert(`无法打开结构化标签管理器：${error.message || error}`);
+      return null;
+    }
   },
 
   openInlineEditor(win, itemID, field, anchor = null) {
