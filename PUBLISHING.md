@@ -4,7 +4,7 @@
 
 ## 1. 核对 GitHub 用户名
 
-当前公开版按 GitHub 用户名 `WilliamWhite` 配置。如果实际用户名不同，请先替换以下文件中的 `WilliamWhite`：
+当前公开版按 GitHub 用户名 `WilliamWhite080808` 配置。如果实际用户名不同，请先替换以下文件中的 `WilliamWhite080808`：
 
 - `manifest.json`
 - `updates.json`
@@ -25,11 +25,11 @@
 
 ```powershell
 git init -b main
-git config user.name "WilliamWhite"
+git config user.name "WilliamWhite080808"
 git config user.email "你的 GitHub no-reply 邮箱"
 git add .
 git commit -m "Initial public release"
-git remote add origin https://github.com/WilliamWhite/zotero-structured-tags.git
+git remote add origin https://github.com/WilliamWhite080808/zotero-structured-tags.git
 git push -u origin main
 ```
 
@@ -50,8 +50,8 @@ GitHub no-reply 邮箱可在 GitHub 的 **Settings → Emails** 中查看。不�
 
 发布完成后，确认以下两个地址可以直接打开：
 
-- `https://raw.githubusercontent.com/WilliamWhite/zotero-structured-tags/main/updates.json`
-- `https://github.com/WilliamWhite/zotero-structured-tags/releases/download/v1.0.0/structured-tags-1.0.0.xpi`
+- `https://raw.githubusercontent.com/WilliamWhite080808/zotero-structured-tags/main/updates.json`
+- `https://github.com/WilliamWhite080808/zotero-structured-tags/releases/download/v1.0.0/structured-tags-1.0.0.xpi`
 
 以后发布新版本时，需要同步更新：
 
