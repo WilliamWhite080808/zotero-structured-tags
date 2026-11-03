@@ -571,25 +571,11 @@ var StructuredTags = {
       });
     }
     if (!rawData) return root;
-    for (let value of String(rawData).split("\u001f")) {
-      let chip = doc.createElement("span");
-      chip.textContent = value;
-      chip.title = value;
-      chip.style.cssText = [
-        "display:inline-block",
-        "max-width:180px",
-        "overflow:hidden",
-        "text-overflow:ellipsis",
-        "padding:1px 6px",
-        "border-radius:9px",
-        "font-size:0.92em",
-        "line-height:1.35",
-        "background:color-mix(in srgb, AccentColor 17%, transparent)",
-        "border:1px solid color-mix(in srgb, AccentColor 36%, transparent)",
-        "color:inherit"
-      ].join(";");
-      root.appendChild(chip);
-    }
+    let text = doc.createElement("span");
+    text.textContent = String(rawData).split("\u001f").join("、");
+    text.title = text.textContent;
+    text.style.cssText = "display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:inherit;color:inherit;";
+    root.appendChild(text);
     return root;
   },
 
@@ -700,8 +686,6 @@ var StructuredTags = {
           min-width:0 !important;
           padding-inline:2px !important;
         }
-        [data-structured-cell="true"] { border-radius:4px; }
-        [data-structured-cell="true"]:hover { background:color-mix(in srgb, AccentColor 12%, transparent); }
         [data-structured-cell="true"][data-empty="true"]::after { content:"点击编辑"; opacity:0; font-size:11px; }
         [data-structured-cell="true"][data-empty="true"]:hover::after { opacity:.48; }
       `;

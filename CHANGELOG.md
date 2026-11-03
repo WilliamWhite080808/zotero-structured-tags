@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.0.4 - 2026-11-03
+
+### 中文
+
+- 自定义列改为普通文本，移除蓝色胶囊背景、边框和悬停底色
+- 多值以顿号分隔，按整格宽度省略，继承列表字体和选中行文字颜色
+- 保留单击编辑及完整值悬停提示
+
+### English
+
+- Render custom columns as plain text without blue pills, borders, or hover backgrounds
+- Separate multiple values with an ideographic comma and truncate at the cell width, inheriting list typography and selection colors
+- Preserve click-to-edit and full-value tooltips
+
 ## 1.0.3 - 2026-11-03
 
 ### 中文

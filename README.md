@@ -13,6 +13,7 @@ A configurable structured-tag plugin for Zotero 10. It displays native Zotero ta
 ## 功能 / Features
 
 - 在文献列表中显示自定义标签列 / Display custom tag columns in the item list
+- 自定义列采用普通文本显示，继承列表字体与选中颜色；多值以顿号分隔 / Render custom columns as plain text with inherited list typography and selection colors; separate multiple values with an ideographic comma
 - 支持单选、多选、数值和文本字段 / Support single-choice, multiple-choice, numeric, and text fields
 - 单击自定义单元格直接编辑 / Edit a custom cell with one click
 - 批量修改所选文献 / Batch-edit selected items
