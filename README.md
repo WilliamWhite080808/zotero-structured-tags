@@ -32,6 +32,10 @@ Zotero 原生标签始终是主数据，因此可以使用 Zotero 自身的同�
 
 Native Zotero tags remain the source of truth and continue to use Zotero Sync. The plugin also mirrors structured values in real time to `structured-tags.sqlite` inside the Zotero data directory and records an audit history. The database is deliberately kept outside the application installation directory so Zotero upgrades or reinstalls do not overwrite it.
 
+**1.0.3 修复启动卡住：** 镜像库现以外部数据库模式打开，独立检查完整性，并在退出时关闭。升级会继续使用原有镜像文件，不会删除标签或历史；若镜像无法使用，原生标签与编辑界面仍可用。
+
+**Startup fix in 1.0.3:** The mirror now opens in external-database mode, receives its own integrity check, and closes on exit. Upgrades reuse the existing mirror without deleting tags or history. Native tags and the editing UI remain available if the optional mirror cannot be used.
+
 版本变化时，插件会先扫描已有配置、标签和本地字段目录。匹配依据包括稳定字段 ID、规范化名称、历史别名、字段类型兼容性、候选选项重合度、名称编辑距离和字符片段相似度。只有高置信度且与次优候选有足够差距的结果才会自动迁移；不确定结果只写入迁移日志，不会覆盖原始数据。
 
 When the plugin version changes, it first scans the existing configuration, tags, and local field catalog. Matching considers stable field IDs, normalized names, recorded aliases, type compatibility, option overlap, edit-distance similarity, and character-token similarity. A migration runs automatically only when confidence is high and clearly exceeds the runner-up; uncertain matches are logged without overwriting source data.

@@ -128,4 +128,59 @@ assert.equal(storageQueries.filter(query => query.sql.includes("item_values")).l
 assert.equal(storageQueries.filter(query => query.sql.includes("change_history")).length, 2, "records an audit entry for each mirrored change");
 api.db = null;
 
+// Reproduce the Zotero 10 regression: name-based connections can invoke
+// main-library recovery UI when an existing mirror has a nonempty WAL.
+const dbEvents = [];
+const mirrorPath = "C:\\Zotero test data\\structured-tags.sqlite";
+const storageErrors = [];
+Zotero.DataDirectory = { getDatabase(name) {
+  assert.equal(name, "structured-tags");
+  return mirrorPath;
+} };
+Zotero.DBConnection = class {
+  constructor(path) {
+    assert.equal(path, mirrorPath, "mirror must use the absolute-path external database mode");
+    this.path = path;
+    dbEvents.push("open-external");
+  }
+  async integrityCheck() { dbEvents.push("integrity-check"); return true; }
+  async queryAsync(sql) { dbEvents.push(sql); }
+  async closeDatabase(permanent) { assert.equal(permanent, true); dbEvents.push("close"); }
+};
+Zotero.logError = error => storageErrors.push(error);
+await api.initializeStorage();
+assert.equal(dbEvents[1], "integrity-check", "check existing WAL-backed mirror before any schema writes");
+assert.ok(dbEvents.includes("CREATE INDEX IF NOT EXISTS item_values_item_id ON item_values(item_id)"));
+
+// APP_SHUTDOWN must wait for queued writes and close the optional DB without
+// touching UI managers that Zotero may already have torn down.
+api.storageQueue = Promise.resolve().then(() => dbEvents.push("queued-write"));
+const unregisterColumns = api.unregisterColumns;
+api.unregisterColumns = async () => { throw new Error("UI manager unavailable during exit"); };
+await api.shutdown({ appShutdown: true });
+assert.equal(api.db, null);
+assert.ok(dbEvents.indexOf("queued-write") < dbEvents.indexOf("close"));
+
+// If initialization fails, release the connection and leave native tags/UI usable.
+Zotero.DBConnection.prototype.integrityCheck = async () => false;
+await api.initializeStorage();
+assert.equal(api.db, null);
+assert.match(storageErrors.at(-1).message, /mirror integrity check failed/);
+assert.equal(dbEvents.at(-1), "close");
+
+// Closing the DB is guaranteed even when UI teardown itself fails.
+Zotero.DBConnection.prototype.integrityCheck = async () => true;
+await api.initializeStorage();
+await assert.rejects(api.shutdown(), /UI manager unavailable/);
+assert.equal(api.db, null);
+api.unregisterColumns = unregisterColumns;
+
+// The bootstrap callback must actually forward application shutdown.
+const bootstrapContext = vm.createContext({ APP_SHUTDOWN: 2 });
+vm.runInContext(fs.readFileSync(new URL("../bootstrap.js", import.meta.url), "utf8"), bootstrapContext);
+let appShutdownForwarded = false;
+bootstrapContext.StructuredTags = { async shutdown(options) { appShutdownForwarded = options.appShutdown; } };
+await bootstrapContext.shutdown({}, 2);
+assert.equal(appShutdownForwarded, true);
+
 console.log("Structured Tags tests passed");

@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.0.3 - 2026-11-03
+
+### 中文
+
+- 修复镜像库存在 WAL 日志时，Zotero 10 启动后一直显示“正在检查数据库完整性”的问题
+- 使用绝对路径以外部数据库模式打开原有镜像库，并独立检查完整性；不再触发主库恢复遮罩
+- Zotero 退出时等待镜像写入完成并关闭连接；初始化失败时释放连接
+- 列和菜单先于可选镜像初始化；保留现有原生标签、字段配置和镜像历史
+- 增加数据库打开方式、故障降级和应用退出的回归测试
+
+### English
+
+- Fixes a persistent Zotero 10 integrity-check overlay when the mirror has an existing WAL
+- Opens the existing mirror by absolute path in external-database mode and checks its integrity independently, avoiding main-library recovery UI
+- Drains mirror writes and closes the connection on application exit; releases failed connections
+- Registers columns and menus before optional mirror initialization, preserving native tags, field settings, and mirror history
+- Adds regression coverage for database opening, failure fallback, and application shutdown
+
 ## 1.0.2 - 2026-10-22
 
 ### 中文

@@ -36,6 +36,11 @@ var StructuredTags = {
     if (!Zotero.Prefs.get(this.prefKey, true)) {
       Zotero.Prefs.set(this.prefKey, JSON.stringify(this.defaultFields), true);
     }
+    // The optional mirror must not delay column and menu availability.
+    await this.registerColumns();
+    for (let win of Services.wm.getEnumerator("navigator:browser")) {
+      this.addToWindow(win);
+    }
     await this.initializeStorage();
     if (this.db) {
       try {
@@ -48,23 +53,25 @@ var StructuredTags = {
         Zotero.logError(error);
       }
     }
-    await this.registerColumns();
-    for (let win of Services.wm.getEnumerator("navigator:browser")) {
-      this.addToWindow(win);
-    }
   },
 
-  async shutdown() {
+  async shutdown({ appShutdown = false } = {}) {
     if (this.notifierID) {
       Zotero.Notifier.unregisterObserver(this.notifierID);
       this.notifierID = null;
     }
     await this.storageQueue.catch(() => {});
-    for (let win of [...this.windows]) this.removeFromWindow(win);
-    await this.unregisterColumns();
-    if (this.db) {
-      await this.db.closeDatabase();
-      this.db = null;
+    try {
+      if (!appShutdown) {
+        for (let win of [...this.windows]) this.removeFromWindow(win);
+        await this.unregisterColumns();
+      }
+    }
+    finally {
+      if (this.db) {
+        await this.db.closeDatabase(true);
+        this.db = null;
+      }
     }
   },
 
@@ -82,7 +89,16 @@ var StructuredTags = {
   async initializeStorage() {
     if (!Zotero.DBConnection) return;
     try {
-      this.db = new Zotero.DBConnection("structured-tags");
+      // A bare database name opts into Zotero's main-library recovery UI.
+      // When an old mirror WAL exists, Zotero 10 shows an integrity-check
+      // overlay after initialization and never dismisses it on this path.
+      // An absolute path keeps this optional mirror external to that UI.
+      let path = Zotero.DataDirectory.getDatabase("structured-tags");
+      this.db = new Zotero.DBConnection(path);
+      if (!(await this.db.integrityCheck())) {
+        throw new Error("Structured Tags: mirror integrity check failed; existing files were preserved");
+      }
+      await this.db.queryAsync("PRAGMA foreign_keys=ON");
       let statements = [
         `CREATE TABLE IF NOT EXISTS metadata (
           key TEXT PRIMARY KEY,
@@ -140,8 +156,14 @@ var StructuredTags = {
       Zotero.debug(`Structured Tags: local mirror database ready at ${this.db.path}`);
     }
     catch (error) {
-      Zotero.logError(error);
+      let failedDB = this.db;
       this.db = null;
+      // Release the connection without deleting or rebuilding existing data.
+      if (failedDB) {
+        try { await failedDB.closeDatabase(true); }
+        catch (closeError) { Zotero.logError(closeError); }
+      }
+      Zotero.logError(error);
     }
   },
 

@@ -22,9 +22,10 @@ async function startup({ id, version, rootURI }, reason) {
 }
 
 async function shutdown({ id, version, rootURI }, reason) {
-  if (reason === APP_SHUTDOWN) return;
   if (StructuredTags) {
-    await StructuredTags.shutdown();
+    // Even on application exit, drain mirror writes and close/checkpoint
+    // the connection. Skipping this leaves a WAL for the next startup.
+    await StructuredTags.shutdown({ appShutdown: reason === APP_SHUTDOWN });
     StructuredTags = null;
   }
   if (chromeHandle) {
